@@ -4,6 +4,8 @@ import os
 import warnings
 from datetime import datetime
 import unicodedata
+import re
+from functools import reduce
 
 import editdistance
 import spacy
@@ -169,12 +171,7 @@ class ContextualSpellCheck(object):
         else:
             misspell_tokens, doc = self.misspell_identify(doc)
             if len(misspell_tokens) > 0:
-                doc, candidate = self.candidate_generator(doc, misspell_tokens)
-                
-                raw_sentence = doc._.outcome_spellCheck.split(" ")
-                cleaned_sentence = self.BertTokenizer.convert_tokens_to_string(
-                    raw_sentence
-                )
+                cleaned_sentence = self.candidate_generator(doc, misspell_tokens)             
                 doc._.set("outcome_spellCheck", cleaned_sentence)
         return doc
 
@@ -265,23 +262,15 @@ class ContextualSpellCheck(object):
             print("misspell identified: ", misspell)
         return misspell, doc
 
-    def bert_mask_prediction(updated_query, misspelling):
+    def bert_mask_prediction(self, update_query, misspelling, top_n = 10):
         response = {}
         score = {}
-        model_input = self.BertTokenizer.encode(
-                update_query, return_tensors="pt"
-            )
-        mask_token_index = torch.where(
-                model_input == self.BertTokenizer.mask_token_id
-            )[1]
+        model_input = self.BertTokenizer.encode(update_query, return_tensors="pt")
+        mask_token_index = torch.where(model_input == self.BertTokenizer.mask_token_id)[1]
         token_logits = self.BertModel(model_input)[0]
         mask_token_logits = token_logits[0, mask_token_index, :]
-        token_probability = torch.nn.functional.softmax(
-                mask_token_logits, dim=1
-            )
-        top_n_score, top_n_tokens = torch.topk(
-                token_probability, top_n, dim=1
-            )
+        token_probability = torch.nn.functional.softmax(mask_token_logits, dim=1)
+        top_n_score, top_n_tokens = torch.topk(token_probability, top_n, dim=1)
         top_n_tokens = top_n_tokens[0].tolist()
         top_n_score = top_n_score[0].tolist()
         if self.debug:
@@ -291,28 +280,15 @@ class ContextualSpellCheck(object):
         response[misspelling] = [self.BertTokenizer.decode([candidateWord]) for candidateWord in top_n_tokens]
         score[misspelling] = [(self.BertTokenizer.decode([top_n_tokens[i]]),round(top_n_score[i], 5),)for i in range(top_n)]
         if self.debug:
-                print(
-                    "response for" + str(misspelling)+ ": ",
-                    response[misspelling],
-                    "score for" + str(misspelling)+ ": ",
-                    score[misspelling]
-                )
-        
-		return response, score
+            print("response for " + str(misspelling)+ ": ",response[misspelling],'\n'
+                  "score for " + str(misspelling)+ ": ", score[misspelling])
+        return response, score
 
-	def correct_misspeling_with_candidate(query, response):
-         update_query = ""
-         for i in query:
-         	update_token = i.text_with_ws
-             for misspell in response.keys():
-             	if i.i == misspell.i:
-                 		update_token = response[misspell] + misspell.whitespace_
-                      break
-             update_query += update_token
-
+    def correct_misspelling_with_candidate(self, query, token, response):
+        update_query = query.replace(self.mask, response[token])
         if self.debug:
-            print("Corrected sentence", update_query)
-		return update_query
+            print("Corrected sentence: ", update_query)
+        return update_query
 
     def candidate_generator(self, doc, misspellings, top_n=10):
         """Returns Candidates for misspell words
@@ -339,45 +315,62 @@ class ContextualSpellCheck(object):
                                       misspell-2:['candidate-1','candidate-2'
                                       . ...]}
         """
+      
+        update_queries = []
+        update_query = "".join(token.text_with_ws for token in doc)
+   
         for token in misspellings:
-            update_query = ""
-            update_queries =[]
-            # Instead of using complete doc, we use sentence to provide context
-            # and improve performance
-            if self.debug:
-                print(token.text,':', token.sent)
-            for i in token.sent:
-                if i.i == token.i:
-                    update_query += self.mask + i.whitespace_
-                else:
-                    update_query += i.text_with_ws
+            update_query = update_query.replace(token.text,  self.mask)
+                      
+        if len(misspellings)>1:
+            parts = update_query.split(self.mask)
+            for i in range(len(parts)-1):
+                doc_sent = parts[i] + self.mask + " " + parts[i+1]
+                #doc_sent = re.sub(r'\s+', ' ', doc_sent).strip()
+                update_queries.append(doc_sent)
+        else: 
             update_queries.append(update_query)
-            if len(misspellings)>1:
-                parts = update_query.split(self.mask)    
-                for i in range(len(parts)-1):
-                    update_queries.append(parts[i] + self.mask + parts[i+1])
-            if self.debug:
-                print(
-                    "\nFor",
-                    "`" + token.text + "`",
-                    "updated query is:\n",
-                    update_queries,
-                )
-            if len(update_queries)>1:
-                for i in len(update_queries):
-					response, score = self.bert_mask_prediction(updated_queries[i], token)
-					candidate_response = self.candidate_ranking(response, token) 
-					updated_queries[i] = self.correct_misspeling_with_candidate(token.sent, candidate_response)
-					updated_queries[i+1] = updated_queries[i] + “ ” + updated_queries[i+1]               
-            ) 
-            else:
-				response, score = self.bert_mask_prediction(updated_queries, token)
-				candidate_response = self.candidate_ranking(response, token) 
-				updated_queries = self.correct_misspeling_with_candidate(token.sent, candidate_response)
-		
-		return updated_queries
 
-    def candidate_ranking(self, misspelling, misspelling_responses):
+        if self.debug:
+            print(
+                "\nFor",
+                "`" + token.text + "`",
+                "update query is:\n",
+                update_queries,
+            )
+        if self.performance:
+            for i in range(len(update_queries)):
+                token = misspellings[i]
+                model_loaded = datetime.now()
+                response, score = self.bert_mask_prediction(update_queries[i], token)
+                self.time_log("Candidate Generator took: ", model_loaded)
+                model_loaded = datetime.now()
+                candidate_response = self.candidate_ranking(response, token) 
+                self.time_log("Candidate Ranking took: ", model_loaded)
+                update_queries[i] = self.correct_misspelling_with_candidate(update_queries[i], token, candidate_response)     
+                if len(misspellings)>1 and i<len(update_queries)-1:
+                    print(i)
+                    print(update_queries)
+                    update_queries[i+1] = reduce(lambda acc, c: acc + c if c not in acc else acc, update_queries[i+1], update_queries[i])
+                    print(update_queries[i+1])
+                doc._.set("performed_spellCheck", True)
+                doc._.set("score_spellCheck", score)
+                doc._.set("suggestions_spellCheck", response)
+        else:
+            for i in range(len(update_queries)):
+                token = misspellings[i]
+                response, score = self.bert_mask_prediction(update_queries[i], token)
+                candidate_response = self.candidate_ranking(response, token) 
+                if len(misspellings)>1 and i<len(update_queries)-1:
+                    update_queries[i] = self.correct_misspelling_with_candidate(update_queries[i], token, candidate_response)     
+                    update_queries[i+1] = reduce(lambda acc, c: acc + c if c not in acc else acc, update_queries[i+1], update_queries[i])
+                    print(update_queries[i+1])
+                doc._.set("performed_spellCheck", True)
+                doc._.set("score_spellCheck", score)
+                doc._.set("suggestions_spellCheck", response)
+        return update_queries[-1]
+
+    def candidate_ranking(self, misspelling_responses, misspelling):
         """Ranking the candidates based on edit Distance
 
         At present using a library to calculate edit distance
@@ -395,28 +388,27 @@ class ContextualSpellCheck(object):
         """
 
         #         doc = self.nlp(query)
-		response = {}
-		least_edit_dist = self.max_edit_dist
+        response = {}
+        least_edit_dist = self.max_edit_dist
 
         if self.debug:
-         	print("misspelling responses:”, misspelling_responses[misspelling])
-         for candidate in misspelling_responses[misspelling]:
-         	edit_dist = editdistance.eval(misspelling.text, candidate)
-             if edit_dist < least_edit_dist:
-             	least_edit_dist = edit_dist
-                 response[misspelling] = candidate
+            print("misspelling responses: ", misspelling_responses[misspelling])
+        for candidate in misspelling_responses[misspelling]:
+            edit_dist = editdistance.eval(misspelling.text, candidate)
+            if edit_dist < least_edit_dist:
+                least_edit_dist = edit_dist
+                response[misspelling] = candidate
 
-          if self.debug:
-              if len(response) != 0:
-                 print("response for ” + str(misspelling) + " ",
-                        response[misspell],
+        if self.debug:
+            if len(response) != 0:
+                print("response for " + str(misspelling) + ": ",
+                        response[misspelling],
                     )
-                else:
-                    print(
+            else:
+                print(
                         "No candidate selected for max_edit_dist="
                         + str(self.max_edit_dist)
                     )
-
         return response
 
     @staticmethod
@@ -648,7 +640,7 @@ if __name__ == "__main__":
     # nlp.add_pipe(merge_ents)
 
     doc = nlp(
-        "Income was $9.4 milion compared to the prior year of $2.7 milion."
+        "Income was $9.4 milion compared to the prior year"# of $2.7 milion."
     )
 
     print("=" * 20, "Doc Extension Test", "=" * 20)
@@ -672,3 +664,5 @@ if __name__ == "__main__":
     print(doc[span_start:span_end].text)
     print(doc[span_start:span_end]._.get_has_spellCheck)
     print(doc[span_start:span_end]._.score_spellCheck)
+
+
