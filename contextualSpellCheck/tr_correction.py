@@ -17,7 +17,8 @@ def add_contextual_spellchecker(nlp, config):
     print("Adding contextual spell checker to the pipeline")
     spell_checker = nlp.add_pipe(
         "contextual_spellchecker",
-        config={"debug": config.debug, "max_edit_dist": config.max_edit_dist, "model_name":config.model_name}
+        config={"debug": config.debug, "max_edit_dist": config.max_edit_dist, "model_name":config.model_name},
+        last=True
     )
     return spell_checker
 
