@@ -1,15 +1,14 @@
-spacy>=3.4.2
+spacy==3.4.2
 editdistance==0.6.2
 pytest
 --find-links https://download.pytorch.org/whl/torch_stable.html
-torch>=1.4
-transformers>=4.0.0
-spacy_transformers>=1.2.0
-
+#torch>=1.4,<=2.1.1
+#transformers>=4.0.0,<=4.31.0
+spacy_transformers==1.1.8
+pandarallel==1.6.5
 https://huggingface.co/turkish-nlp-suite/tr_core_news_lg/resolve/main/tr_core_news_lg-any-py3-none-any.whl
 https://huggingface.co/turkish-nlp-suite/tr_core_news_trf/resolve/main/tr_core_news_trf-any-py3-none-any.whl
 
 # Code formatting
 flake8>=3.8.3
 black==22.6
-
