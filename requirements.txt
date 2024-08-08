@@ -4,7 +4,7 @@ pytest
 --find-links https://download.pytorch.org/whl/torch_stable.html
 torch>=1.4
 transformers>=4.0.0
-spacy_transformers>=1.0.0
+spacy_transformers>=1.2.0
 
 # Required for Japanese Language
 # mecab-python3==0.996.5
