@@ -54,7 +54,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_edit_dist", type=int, default=3, help="The maximum edit distance for the spell checker.")
     parser.add_argument("--debug", type=bool, default=False, help="The debug option.") 
     parser.add_argument("--data_path", type=str, required=True, help="The path of test csv.") 
-    parser. add_argumeny("--parallerize", type=bool, default=False, help = "The paralel processing option")
+    parser. add_argument("--parallerize", type=bool, default=False, help = "The paralel processing option")
     args = parser.parse_args()
     main(args)
 
