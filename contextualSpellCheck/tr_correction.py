@@ -35,7 +35,12 @@ def main(args):
     nlp = load_model(args.spacy_model)
 
     # Configure and add the spell checker to the pipeline
-    spell_checker = add_contextual_spellchecker(nlp, args)
+    print("Adding contextual spell checker to the pipeline")
+    nlp.add_pipe(
+        "contextual spellchecker",
+        config={"debug": args.debug, "max_edit_dist": args.max_edit_dist, "model_name":args.model_name},
+        last=True
+    )
 
     df = pd.read_csv(args.data_path, encoding="UTF-8")
     tqdm.pandas(desc="Correcting rows", total=len(df))
@@ -43,9 +48,9 @@ def main(args):
     # Apply the spell checker to the DataFrame
     if args.parallerize:     
         pandarallel.initialize(nb_workers = multiprocessing.cpu_count(),progress_bar = True)
-        df["corrected"] = df_['random_corrupted'].parallel_apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
+        df["corrected"] = df['random_corrupted'].parallel_apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
     else:
-        df["corrected"] = df_['random_corrupted'].apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
+        df["corrected"] = df['random_corrupted'].apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
 
     df.to_csv("./test_" + model_name + ".csv")
 
@@ -59,5 +64,3 @@ if __name__ == "__main__":
     parser. add_argument("--parallerize", type=bool, default=False, help = "The paralel processing option")
     args = parser.parse_args()
     main(args)
-
-
