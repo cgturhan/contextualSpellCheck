@@ -5,6 +5,7 @@ import argparse
 from tqdm import tqdm
 from pandarallel import pandarallel
 import multiprocessing
+import spacy_transformers
 
 # Load the pre-trained model
 def load_model(model_name):
