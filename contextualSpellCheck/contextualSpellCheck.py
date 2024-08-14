@@ -266,7 +266,7 @@ class ContextualSpellCheck(object):
             print("misspell identified: ", misspell)
         return misspell, doc
 
-    def candidate_generator(self, doc, misspellings, top_n=50):
+    def candidate_generator(self, doc, misspellings, top_n=500):
         """Returns Candidates for misspell words
 
         This function is responsible for generating candidate list for misspell
@@ -314,7 +314,7 @@ class ContextualSpellCheck(object):
                 )
 
             model_input = self.BertTokenizer.encode(
-                update_query, return_tensors="pt"
+                update_query, max_length = 512, return_tensors="pt"
             )
             mask_token_index = torch.where(
                 model_input == self.BertTokenizer.mask_token_id
@@ -324,27 +324,33 @@ class ContextualSpellCheck(object):
             token_probability = torch.nn.functional.softmax(
                 mask_token_logits, dim=1
             )
-            top_n_score, top_n_tokens = torch.topk(
-                token_probability, top_n, dim=1
-            )
-            top_n_tokens = top_n_tokens[0].tolist()
-            top_n_score = top_n_score[0].tolist()
-            #if self.debug:
-                # print("top_n_tokens:", top_n_tokens)
-             #   print("token_score: ", top_n_score)
 
-            if token not in response:
-                response[token] = [
-                    self.BertTokenizer.decode([candidateWord])
-                    for candidateWord in top_n_tokens
-                ]
-                score[token] = [
-                    (
-                        self.BertTokenizer.decode([top_n_tokens[i]]),
-                        round(top_n_score[i], 5),
-                    )
-                    for i in range(top_n)
-                ]
+            
+            top_n_score, top_n_tokens = torch.topk(
+                    token_probability, top_n, dim=1
+            )
+            if top_n_tokens.size(0) > 0:
+                top_n_tokens = top_n_tokens[0].tolist()
+                top_n_score = top_n_score[0].tolist()
+                #if self.debug:
+                    # print("top_n_tokens:", top_n_tokens)
+                #   print("token_score: ", top_n_score)
+
+                if token not in response:
+                    response[token] = [
+                        self.BertTokenizer.decode([candidateWord])
+                        for candidateWord in top_n_tokens
+                    ]
+                    score[token] = [
+                        (
+                            self.BertTokenizer.decode([top_n_tokens[i]]),
+                            round(top_n_score[i], 5),
+                        )
+                        for i in range(top_n)
+                    ]
+            else:
+                response[token] = []
+                score[token] = []
 
             if self.debug:
                 print(
@@ -387,14 +393,18 @@ class ContextualSpellCheck(object):
                 print(
                     "misspellings_dict[" + "`" + str(misspell) + "`" + "]:", misspellings_dict[misspell]
                 )
-            for candidate in misspellings_dict[misspell]:
-                edit_dist = editdistance.eval(misspell.text, candidate)
-                if edit_dist <= least_edit_dist:
-                    least_edit_dist = edit_dist
-                    response[misspell] = candidate
+            if misspellings_dict.get(misspell):
+                for candidate in misspellings_dict[misspell]:
+                    edit_dist = editdistance.eval(misspell.text, candidate)
+                    if edit_dist <= least_edit_dist:
+                        least_edit_dist = edit_dist
+                        response[misspell] = candidate
+            else: 
+                  response[misspell]= misspell.text
+
 
             if self.debug:
-                if len(response) != 0:
+                if len(response[misspell]) != 0:
                     print(
                         "response[" + "`" + str(misspell) + "`" + "]:",
                         response[misspell],
@@ -403,8 +413,8 @@ class ContextualSpellCheck(object):
                     print(
                         "No candidate selected for " + str(misspell)
                     )
-            if len(response)==0:
-                response[misspell] = misspell.text
+            #if len(response[misspell])==0:
+            #    response[misspell] = misspell.text
 
         if len(response) > 0:
             doc._.set("suggestions_spellCheck", response)
