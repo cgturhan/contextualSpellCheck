@@ -40,7 +40,7 @@ def main(args):
         config={"debug": args.debug, "max_edit_dist": args.max_edit_dist, "model_name":args.model_name},
         last=True
     )
-    print("Contextual spell checker is added the pipeline")
+    print("Contextual spell checker is in the pipeline")
 
     df = pd.read_csv(args.data_path, encoding="UTF-8")
     tqdm.pandas(desc="Correcting rows", total=len(df))
@@ -50,7 +50,7 @@ def main(args):
         pandarallel.initialize(nb_workers = multiprocessing.cpu_count(),progress_bar = True)
         df["corrected"] = df['random_corrupted'].parallel_apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
     else:
-        df["corrected"] = df['random_corrupted'].apply(correct_with_contextual_spellcheck)
+        df["corrected"] = df['random_corrupted'].progress_apply(correct_with_contextual_spellcheck)
 
     df.to_csv("./test_" + model_name + ".csv")
 
