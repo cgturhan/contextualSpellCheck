@@ -23,24 +23,24 @@ def add_contextual_spellchecker(nlp, config):
     )
     return spell_checker
 
-# Define the function to correct text
-def correct_with_contextual_spellcheck(text, nlp):
-    doc = nlp(text)
-    return doc._.outcome_spellCheck
-
 # Main script
 def main(args):  
     model_name_seg = args.model_name.split('/')[1].split('-')
     model_name = '-'.join(model_name_seg[:3])
     nlp = load_model(args.spacy_model)
 
+    # Define the function to correct text
+    def correct_with_contextual_spellcheck(text):
+        doc = nlp(text)
+        return doc._.outcome_spellCheck
+
     # Configure and add the spell checker to the pipeline
-    print("Adding contextual spell checker to the pipeline")
     nlp.add_pipe(
         "contextual spellchecker",
         config={"debug": args.debug, "max_edit_dist": args.max_edit_dist, "model_name":args.model_name},
         last=True
     )
+    print("Contextual spell checker is added the pipeline")
 
     df = pd.read_csv(args.data_path, encoding="UTF-8")
     tqdm.pandas(desc="Correcting rows", total=len(df))
@@ -50,7 +50,7 @@ def main(args):
         pandarallel.initialize(nb_workers = multiprocessing.cpu_count(),progress_bar = True)
         df["corrected"] = df['random_corrupted'].parallel_apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
     else:
-        df["corrected"] = df['random_corrupted'].apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
+        df["corrected"] = df['random_corrupted'].apply(correct_with_contextual_spellcheck)
 
     df.to_csv("./test_" + model_name + ".csv")
 
