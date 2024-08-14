@@ -48,7 +48,7 @@ def main(args):
     # Apply the spell checker to the DataFrame
     if args.parallerize:     
         pandarallel.initialize(nb_workers = multiprocessing.cpu_count(),progress_bar = True)
-        df["corrected"] = df['random_corrupted'].parallel_apply(lambda text: correct_with_contextual_spellcheck(text, nlp))
+        df["corrected"] = df['random_corrupted'].parallel_apply(correct_with_contextual_spellcheck)
     else:
         df["corrected"] = df['random_corrupted'].progress_apply(correct_with_contextual_spellcheck)
 
